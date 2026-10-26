@@ -1,0 +1,48 @@
+{
+    "id": "cards",
+    "label": "Cards",
+    "category": "Content",
+    "fields": [
+        {
+            "name": "heading",
+            "type": "text",
+            "label": "Heading"
+        },
+        {
+            "name": "items",
+            "type": "repeater",
+            "label": "Cards",
+            "fields": [
+                {
+                    "name": "title",
+                    "type": "text",
+                    "label": "Title"
+                },
+                {
+                    "name": "text",
+                    "type": "textarea",
+                    "label": "Text"
+                }
+            ]
+        }
+    ],
+    "template": "<h2 class=\"mb-4 text-center\">{{heading}}</h2>\n<div class=\"row g-4\">\n{{#each items}}\n<div class=\"col-md-4\"><div class=\"card h-100\"><div class=\"card-body\"><h5 class=\"card-title\">{{title}}</h5><p class=\"card-text\">{{text}}</p></div></div></div>\n{{/each}}\n</div>",
+    "css": "& .card { transition: transform .2s; }\n& .card:hover { transform: translateY(-4px); }",
+    "sample": {
+        "heading": "Why choose us",
+        "items": [
+            {
+                "title": "Durable",
+                "text": "Tested in harsh conditions."
+            },
+            {
+                "title": "Custom",
+                "text": "Designed to your spec."
+            },
+            {
+                "title": "Fast",
+                "text": "Short lead times."
+            }
+        ]
+    }
+}

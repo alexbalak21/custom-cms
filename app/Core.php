@@ -1,17 +1,12 @@
 <?php
-const ROOT = __DIR__;
+// Core classes: storage, pages, DB/RPC, SEO, renderer, media
 const JF = JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES;
-$GLOBALS['CFG'] = require ROOT . '/config.php';
-function cfg(string $k, $d = null) { return $GLOBALS['CFG'][$k] ?? $d; }
-function e($s): string { return htmlspecialchars((string)$s, ENT_QUOTES); }
-function url(string $p = ''): string { return rtrim(cfg('base_path', ''), '/') . '/' . ltrim($p, '/'); }
-function slugify(string $s): string { $t = @iconv('UTF-8', 'ASCII//TRANSLIT', $s) ?: $s; return trim(preg_replace('/[^a-z0-9]+/', '-', strtolower($t)), '-'); }
 
 /* ── Storage ─────────────────────────────────────────────── */
 class Store {
     static function dir(string $kind): string {
-        $d = ROOT . "/data/$kind";
-        if (!is_dir($d)) { mkdir($d, 0775, true); file_put_contents(ROOT . '/data/.htaccess', "Require all denied\n"); }
+        $d = ROOT . "/storage/data/$kind";
+        if (!is_dir($d)) { mkdir($d, 0775, true); file_put_contents(ROOT . '/storage/data/.htaccess', "Require all denied\n"); }
         return $d;
     }
     static function id(string $s): string { return preg_replace('/[^a-z0-9_-]/', '', strtolower($s)); }
@@ -27,8 +22,8 @@ class Store {
         file_put_contents(self::dir($kind) . "/{$d['id']}.json", json_encode($d, JF)); return $d;
     }
     static function delete(string $kind, string $id): void { $f = self::dir($kind) . '/' . self::id($id) . '.json'; if (is_file($f)) unlink($f); }
-    static function json(string $name, $def = []) { $f = ROOT . "/data/$name.json"; return is_file($f) ? json_decode(file_get_contents($f), true) : $def; }
-    static function put(string $name, $d): void { self::dir('blocks'); file_put_contents(ROOT . "/data/$name.json", json_encode($d, JF)); }
+    static function json(string $name, $def = []) { $f = ROOT . "/storage/data/$name.json"; return is_file($f) ? json_decode(file_get_contents($f), true) : $def; }
+    static function put(string $name, $d): void { self::dir('blocks'); file_put_contents(ROOT . "/storage/data/$name.json", json_encode($d, JF)); }
 
     static function seed(): void {
         static $done = false; if ($done) return; $done = true;
@@ -52,14 +47,14 @@ class Store {
            'fields'=>[['name'=>'title','type'=>'text','label'=>'Title'],['name'=>'body','type'=>'textarea','label'=>'Body']],
            'template'=>"<h2>{{title}}</h2>\n<p style=\"white-space:pre-line\">{{body}}</p>",'css'=>'','sample'=>['title'=>'Contact','body'=>'Write to us at info@example.com']],
           ['id'=>'product-list','label'=>'Product list (MySQL)','category'=>'Commerce',
-           'fields'=>[['name'=>'heading','type'=>'text','label'=>'Heading'],['name'=>'category','type'=>'text','label'=>'DB category (empty = all)'],['name'=>'limit','type'=>'text','label'=>'Max products']],
-           'rpc'=>['call'=>'products.list','params'=>['category'=>'@content.category','limit'=>'@content.limit'],'as'=>'products'],
-           'template'=>"<h2 class=\"mb-4\">{{heading}}</h2>\n<div class=\"row g-4\">\n{{#each products}}\n<div class=\"col-md-4\"><div class=\"card h-100\"><div class=\"card-body\"><h5>{{name}}</h5><p class=\"text-muted\">{{summary}}</p><p class=\"fw-bold\">€{{price}}</p></div><div class=\"card-footer bg-transparent border-0\"><a href=\"{{url}}\" class=\"btn btn-outline-primary btn-sm\">View</a></div></div></div>\n{{/each}}\n</div>",
-           'css'=>'','sample'=>['heading'=>'Products','category'=>'','limit'=>'6']],
+           'fields'=>[['name'=>'heading','type'=>'text','label'=>'Heading'],['name'=>'limit','type'=>'text','label'=>'Max products']],
+           'rpc'=>['call'=>'products.list','params'=>['limit'=>'@content.limit'],'as'=>'products'],
+           'template'=>"<h2 class=\"mb-4\">{{heading}}</h2>\n<div class=\"row g-4\">\n{{#each products}}\n<div class=\"col-md-4\"><div class=\"card h-100\"><div class=\"card-body\"><div class=\"text-muted small\">{{reference}}</div><h5>{{title}}</h5><p class=\"text-muted\">{{size}}</p><p class=\"fw-bold\">€{{price}}</p></div><div class=\"card-footer bg-transparent border-0\"><a href=\"{{url}}\" class=\"btn btn-outline-primary btn-sm\">View</a></div></div></div>\n{{/each}}\n</div>",
+           'css'=>'','sample'=>['heading'=>'Products','limit'=>'6']],
           ['id'=>'product-detail','label'=>'Product detail (MySQL)','category'=>'Commerce',
            'fields'=>[['name'=>'buy','type'=>'link','label'=>'Button']],
-           'rpc'=>['call'=>'products.get','params'=>['sku'=>'@page.vars.sku'],'as'=>'product'],
-           'template'=>"<div class=\"row align-items-center\"><div class=\"col-lg-7\"><h1>{{product.name}}</h1><p class=\"lead\">{{product.summary}}</p><p>{{product.description}}</p></div><div class=\"col-lg-5 text-lg-end\"><div class=\"display-6 fw-bold\">€{{product.price}}</div><a class=\"btn btn-primary btn-lg mt-2\" href=\"{{buy.url}}\">{{buy.label}}</a></div></div>",
+           'rpc'=>['call'=>'products.get','params'=>['reference'=>'@page.vars.reference'],'as'=>'product'],
+           'template'=>"<div class=\"row align-items-center\"><div class=\"col-lg-7\"><div class=\"text-muted\">{{product.reference}}</div><h1>{{product.title}}</h1><p class=\"lead\">{{product.size}}</p><p>{{product.description}}</p></div><div class=\"col-lg-5 text-lg-end\"><div class=\"display-6 fw-bold\">€{{product.price}}</div><a class=\"btn btn-primary btn-lg mt-2\" href=\"{{buy.url}}\">{{buy.label}}</a></div></div>",
            'css'=>'','sample'=>['buy'=>['label'=>'Request a quote','url'=>'/contact']]],
         ];
         foreach ($blocks as $b) self::save('blocks', $b);
@@ -77,7 +72,7 @@ LD;
         Pages::save(['id'=>'home','title'=>'Home','slug'=>'','category'=>'','status'=>'published','nav'=>false,'vars'=>new stdClass,'seo'=>['title'=>'Custom CMS - Home','description'=>'Welcome to Custom CMS.'],
             'blocks'=>[$S($blocks[0],'xl','dark'), $S($blocks[4]), $S($blocks[1],'large','light'), $S($blocks[2],'large','primary','narrow')]]);
         Pages::save(['id'=>'contact','title'=>'Contact','slug'=>'contact','category'=>'','status'=>'published','nav'=>true,'vars'=>new stdClass,'seo'=>['description'=>'Contact us.'],'blocks'=>[$S($blocks[3])]]);
-        Pages::save(['id'=>'adk-assay-kit','title'=>'PRECICE® ADK Assay Kit','slug'=>'adk-assay-kit','category'=>'convenient-assay-kits','status'=>'published','nav'=>false,'vars'=>['sku'=>'K0507-01'],
+        Pages::save(['id'=>'adk-assay-kit','title'=>'PRECICE® ADK Assay Kit','slug'=>'adk-assay-kit','category'=>'convenient-assay-kits','status'=>'published','nav'=>false,'vars'=>['reference'=>'K0507-01'],
             'seo'=>['title'=>'PRECICE® ADK Assay Kit - Human Adenosine Kinase Activity Assay','description'=>"Non-radioactive, HTS-ready assay kit to measure human adenosine kinase (ADK) activity and screen ADK inhibitors. 96-well plate format, Z'-factor 0.68.",'keywords'=>'ADK assay kit, adenosine kinase assay, adenosine kinase inhibitor screening, HTS ADK assay','og_title'=>'PRECICE® ADK Assay Kit','og_type'=>'product','og_image'=>'','jsonld_raw'=>$ld],
             'blocks'=>[$S($blocks[5]), $S($blocks[2],'large','primary','narrow')]]);
     }
@@ -93,6 +88,8 @@ class Pages {
             if (($p['slug'] ?? '') === $slug && ($p['category'] ?? '') === $cat && ($drafts || ($p['status'] ?? '') === 'published')) return $p;
         return null;
     }
+    // map of var value => page url (e.g. product reference => /category/page)
+    static function byVar(string $k): array { $o = []; foreach (Store::all('pages') as $p) if (($p['status'] ?? '') === 'published' && !empty($p['vars'][$k])) $o[$p['vars'][$k]] = self::url($p); return $o; }
     static function save(array $p): array {
         $p['title'] = trim($p['title'] ?? '') ?: 'Untitled';
         $p['slug'] = slugify($p['slug'] ?? ''); $p['category'] = slugify($p['category'] ?? '');
@@ -114,7 +111,7 @@ class Db {
     static function pdo(): ?PDO {
         static $pdo = false; if ($pdo !== false) return $pdo;
         $c = cfg('db', []);
-        try { $pdo = !empty($c['dsn']) ? new PDO($c['dsn'], $c['user'] ?? '', $c['pass'] ?? '', [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_EMULATE_PREPARES => false]) : null; }
+        try { $pdo = !empty($c['database']) ? new PDO("mysql:host={$c['host']};port={$c['port']};dbname={$c['database']};charset=utf8mb4", $c['username'], $c['password'], [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_EMULATE_PREPARES => false]) : null; }
         catch (Throwable $e) { error_log('DB: ' . $e->getMessage()); $pdo = null; }
         return $pdo;
     }
@@ -243,45 +240,15 @@ class Renderer {
     }
 }
 
-/* ── Auth ────────────────────────────────────────────────── */
-class Auth {
-    static function start(): void {
-        if (session_status() === PHP_SESSION_NONE) { session_name('custom_cms'); session_set_cookie_params(['httponly' => true, 'samesite' => 'Lax']); session_start(); }
-    }
-    static function user(): ?string { return $_SESSION['user'] ?? null; }
-    static function csrf(): string { return $_SESSION['csrf'] ??= bin2hex(random_bytes(16)); }
-    static function users(): array {
-        $u = Store::json('users', null);
-        if (!$u) { $u = [['username' => cfg('admin_user', 'admin'), 'hash' => password_hash(cfg('admin_pass', 'changeme'), PASSWORD_DEFAULT), 'default' => true]]; Store::put('users', $u); }
-        return $u;
-    }
-    static function login(string $user, string $pass): ?string {
-        $ip = $_SERVER['REMOTE_ADDR'] ?? '?'; $f = Store::json('login_fail', []);
-        [$n, $t] = $f[$ip] ?? [0, 0];
-        if ($n >= 5 && time() - $t < 900) return 'Too many attempts. Try again in 15 minutes.';
-        foreach (self::users() as $u) if ($u['username'] === $user && password_verify($pass, $u['hash'])) {
-            unset($f[$ip]); Store::put('login_fail', $f); session_regenerate_id(true); $_SESSION['user'] = $user; return null;
-        }
-        $f[$ip] = [($n >= 5 && time() - $t >= 900 ? 0 : $n) + 1, time()]; Store::put('login_fail', $f);
-        return 'Invalid credentials';
-    }
-    static function changePassword(string $new): void {
-        if (strlen($new) < 8) throw new RuntimeException('Password must be at least 8 characters');
-        $us = self::users(); foreach ($us as &$u) if ($u['username'] === self::user()) { $u['hash'] = password_hash($new, PASSWORD_DEFAULT); unset($u['default']); }
-        Store::put('users', $us);
-    }
-    static function isDefault(): bool { foreach (self::users() as $u) if ($u['username'] === self::user()) return !empty($u['default']); return false; }
-}
-
 /* ── Media ───────────────────────────────────────────────── */
 class Media {
     static function list(): array {
-        $hay = ''; foreach (array_merge(glob(ROOT . '/data/pages/*.json'), glob(ROOT . '/data/blocks/*.json')) as $f) $hay .= file_get_contents($f);
+        $hay = ''; foreach (array_merge(glob(ROOT . '/storage/data/pages/*.json'), glob(ROOT . '/storage/data/blocks/*.json')) as $f) $hay .= file_get_contents($f);
         return array_map(fn($m) => $m + ['usage' => substr_count($hay, $m['url'])], Store::json('media', []));
     }
     static function upload(array $f): array {
         $ok = ['jpg'=>'image/jpeg','jpeg'=>'image/jpeg','png'=>'image/png','webp'=>'image/webp','gif'=>'image/gif','pdf'=>'application/pdf'];
-        $db = Store::json('media', []); $added = []; $dir = ROOT . '/uploads'; if (!is_dir($dir)) mkdir($dir, 0775, true);
+        $db = Store::json('media', []); $added = []; $dir = ROOT . '/public/uploads'; if (!is_dir($dir)) mkdir($dir, 0775, true);
         foreach ((array)$f['name'] as $i => $name) {
             if ($f['error'][$i] !== UPLOAD_ERR_OK) continue;
             $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION)); $tmp = $f['tmp_name'][$i];
@@ -302,7 +269,7 @@ class Media {
     }
     static function delete(string $id): void {
         $db = Store::json('media', []);
-        foreach ($db as $m) if ($m['id'] === $id) @unlink(ROOT . '/uploads/' . basename($m['filename']));
+        foreach ($db as $m) if ($m['id'] === $id) @unlink(ROOT . '/public/uploads/' . basename($m['filename']));
         Store::put('media', array_values(array_filter($db, fn($m) => $m['id'] !== $id)));
     }
 }

@@ -1,15 +1,14 @@
 <?php
-// Custom CMS configuration
+// All values come from .env
 return [
-    'base_path'  => '',                       // '' if installed at web root, '/mysite' if in a subfolder
-    'base_url'   => 'http://localhost:8000',  // used for canonical, og:image, sitemap (also editable in Settings)
-    'site_name'  => 'Custom CMS',
-    'admin_user' => 'admin',                  // first-run credentials (stored hashed in data/users.json)
-    'admin_pass' => 'changeme',               // CHANGE IT in Admin > Settings after first login
-    // MySQL for product blocks. Leave dsn empty to use the built-in sample data.
+    'base_path' => env('APP_BASE_PATH', ''),
+    'base_url'  => env('APP_URL', 'http://localhost:8000'),
+    'site_name' => env('APP_NAME', 'Custom CMS'),
     'db' => [
-        'dsn'  => '',  // e.g. 'mysql:host=localhost;dbname=shop;charset=utf8mb4'
-        'user' => '',
-        'pass' => '',
+        'host'     => env('DB_HOST', '127.0.0.1'),
+        'port'     => env('DB_PORT', '3306'),
+        'database' => env('DB_DATABASE', ''),
+        'username' => env('DB_USERNAME', ''),
+        'password' => env('DB_PASSWORD', ''),
     ],
 ];

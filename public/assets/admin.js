@@ -11,12 +11,12 @@ function flash(msg, type = 'success') {
   document.body.append(t); setTimeout(() => t.remove(), 2600);
 }
 async function call(a, body) {
-  const r = await fetch('api.php?action=' + a, { method: body !== undefined ? 'POST' : 'GET', headers: { 'X-CSRF': CSRF, 'Content-Type': 'application/json' }, body: body !== undefined ? JSON.stringify(body) : undefined });
+  const r = await fetch(BASE + '/admin/api/' + a, { method: body !== undefined ? 'POST' : 'GET', headers: { 'X-CSRF': CSRF, 'Content-Type': 'application/json' }, body: body !== undefined ? JSON.stringify(body) : undefined });
   if (r.status === 401) location.reload();
   const j = await r.json(); if (j && j.error) { flash(j.error, 'danger'); throw j; } return j;
 }
 async function preview(frame, body) {
-  const r = await fetch('api.php?action=render', { method: 'POST', headers: { 'X-CSRF': CSRF }, body: JSON.stringify(body) });
+  const r = await fetch(BASE + '/admin/api/render', { method: 'POST', headers: { 'X-CSRF': CSRF }, body: JSON.stringify(body) });
   frame.srcdoc = await r.text();
 }
 const btn = (txt, on, cls = 'btn-outline-secondary') => { const b = el('button', 'btn btn-sm ' + cls, txt); b.type = 'button'; b.onclick = on; return b; };
@@ -78,7 +78,7 @@ function renderFields(fields, obj, box, ch) {
 async function dashboard() {
   const [me, pages, media, cats] = await Promise.all([call('me'), call('pages'), call('media'), call('categories')]);
   const box = el('div', 'scroll');
-  box.innerHTML = `${me.default_pw ? '<div class="alert alert-warning">You are using the default password. Change it in <a href="#settings">Settings</a>.</div>' : ''}
+  box.innerHTML = `
   <div class="row g-3 mb-4">${[['Pages', pages.length], ['Published', pages.filter(p => p.status === 'published').length], ['Categories', cats.length], ['Media', media.length]].map(([l, n]) => `<div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">${l}</div><div class="display-6">${n}</div></div></div>`).join('')}</div>
   <p class="text-muted">MySQL: ${me.db ? '<span class="text-success">connected</span>' : 'not configured — product blocks use sample data (see config.php)'}<br>Procedures: <code>${me.procedures.join(', ')}</code></p>
   <div id="cmp"></div>`;
@@ -89,9 +89,9 @@ async function dashboard() {
 /* ───────── Pages list ───────── */
 async function pagesList() {
   const pages = await call('pages'), box = el('div', 'scroll');
-  tools.append(btn('+ New page', () => location.hash = '#page/new', 'btn-primary'));
-  box.innerHTML = `<table class="table align-middle"><thead><tr><th>Title</th><th>URL</th><th>Status</th><th></th></tr></thead><tbody>${pages.map(p => `<tr><td>${esc(p.title)}</td><td><code>${esc(pageUrl(p))}</code></td><td><span class="badge text-bg-${p.status === 'published' ? 'success' : 'secondary'}">${p.status}</span></td><td class="text-end"><a class="btn btn-sm btn-outline-secondary" href="#page/${p.id}">Edit</a> <a class="btn btn-sm btn-outline-secondary" target="_blank" href="${pageUrl(p)}?preview=1">View</a> <button class="btn btn-sm btn-outline-danger" data-del="${p.id}">Delete</button></td></tr>`).join('')}</tbody></table>`;
-  box.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => { if (confirm('Delete this page?')) { await call('delete_page', { id: b.dataset.del }); go(); } });
+  tools.append(btn('+ New page', () => location.href = BASE + '/admin/pages/create', 'btn-primary'));
+  box.innerHTML = `<table class="table align-middle"><thead><tr><th>Title</th><th>URL</th><th>Status</th><th></th></tr></thead><tbody>${pages.map(p => `<tr><td>${esc(p.title)}</td><td><code>${esc(pageUrl(p))}</code></td><td><span class="badge text-bg-${p.status === 'published' ? 'success' : 'secondary'}">${p.status}</span></td><td class="text-end"><a class="btn btn-sm btn-outline-secondary" href="${BASE}/admin/pages/${p.id}/edit">Edit</a> <a class="btn btn-sm btn-outline-secondary" target="_blank" href="${pageUrl(p)}?preview=1">View</a> <button class="btn btn-sm btn-outline-danger" data-del="${p.id}">Delete</button></td></tr>`).join('')}</tbody></table>`;
+  box.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => { if (confirm('Delete this page?')) { await call('delete_page', { id: b.dataset.del }); location.reload(); } });
   app.append(box);
 }
 
@@ -107,8 +107,8 @@ async function pageEditor(id) {
   const upd = debounce(() => preview(frame, { page: clean() }));
   const view = el('a', 'btn btn-sm btn-outline-secondary', 'View live'); view.target = '_blank';
   const setView = () => { view.href = pageUrl(P) + '?preview=1'; view.style.display = P._new ? 'none' : ''; };
-  tools.append(btn('← Pages', () => location.hash = '#pages'), view,
-    btn('Save', async () => { Object.assign(P, await call('save_page', clean())); delete P._new; setView(); drawSide(); flash('Saved'); }, 'btn-success'));
+  tools.append(btn('← Pages', () => location.href = BASE + '/admin/pages'), view,
+    btn('Save', async () => { Object.assign(P, await call('save_page', clean())); delete P._new; history.replaceState(null, '', BASE + '/admin/pages/' + P.id + '/edit'); setView(); drawSide(); flash('Saved'); }, 'btn-success'));
   const SET = { theme: ['default', 'light', 'dark', 'primary', 'secondary'], spacing: ['none', 'small', 'medium', 'large', 'xl'], container: ['narrow', 'boxed', 'wide', 'full'] };
   const DEF = { theme: 'default', spacing: 'medium', container: 'boxed' };
 
@@ -151,7 +151,7 @@ async function pageEditor(id) {
     const vars = el('textarea', 'form-control mono'); vars.rows = 4; vars.value = JSON.stringify(P.vars, null, 2);
     vars.oninput = () => { try { P.vars = JSON.parse(vars.value); vars.classList.remove('bad'); upd(); } catch { vars.classList.add('bad'); } };
     side.append(field('Page variables (JSON) — usable by blocks as <code>@page.vars.x</code>', vars));
-    if (P._new === undefined) side.append(btn('Delete page', async () => { if (confirm('Delete?')) { await call('delete_page', { id: P.id }); location.hash = '#pages'; } }, 'btn-outline-danger'));
+    if (P._new === undefined) side.append(btn('Delete page', async () => { if (confirm('Delete?')) { await call('delete_page', { id: P.id }); location.href = BASE + '/admin/pages'; } }, 'btn-outline-danger'));
   }
   function tabSeo() {
     const S = P.seo = P.seo || {}, set = k => v => { S[k] = v; };
@@ -186,7 +186,7 @@ async function blockBuilder(id) {
   tools.append(pick,
     btn('New', () => { const nid = slug(prompt('Block id') || ''); if (!nid) return; B = { id: nid, label: nid, category: 'Custom', fields: [], template: '<h2>{{title}}</h2>', css: '', sample: { title: 'Hello' } }; list.push(B); refresh(); load(); }),
     btn('Save', async () => { B = await call('save_block', B); list = await call('blocks'); refresh(); flash('Saved'); }, 'btn-success'),
-    btn('Delete', async () => { if (confirm('Delete block?')) { await call('delete_block', { id: B.id }); go(); } }, 'btn-outline-danger'),
+    btn('Delete', async () => { if (confirm('Delete block?')) { await call('delete_block', { id: B.id }); location.href = BASE + '/admin/blocks'; } }, 'btn-outline-danger'),
     btn('⇅ Preview top/bottom', () => { flipped = !flipped; split.classList.toggle('rev', flipped); }));
   const split = el('div', 'split'), pv = el('div', 'pane preview'), ed = el('div', 'pane editor d-flex flex-column'), frame = el('iframe'); pv.append(frame);
   const upd = debounce(() => preview(frame, { block: B })), tabs = el('ul', 'nav nav-tabs mb-2'), areas = {}, wrap = el('div', 'flex-fill'); wrap.style.minHeight = 0;
@@ -217,7 +217,7 @@ async function mediaView() {
   const file = el('input'); file.type = 'file'; file.multiple = true; file.hidden = true; file.accept = '.jpg,.jpeg,.png,.webp,.gif,.pdf';
   file.onchange = async () => {
     const fd = new FormData(); [...file.files].forEach(f => fd.append('files[]', f));
-    const r = await fetch('api.php?action=upload', { method: 'POST', headers: { 'X-CSRF': CSRF }, body: fd }), j = await r.json();
+    const r = await fetch(BASE + '/admin/api/upload', { method: 'POST', headers: { 'X-CSRF': CSRF }, body: fd }), j = await r.json();
     if (j.error) return flash(j.error, 'danger'); flash(`Uploaded ${j.length} file(s)`); items = await call('media'); draw();
   };
   tools.append(q, btn('Upload', () => file.click(), 'btn-primary'), file);
@@ -261,13 +261,9 @@ async function settingsView() {
   app.append(box);
 }
 
-/* ───────── Router ───────── */
-async function go() {
-  const [v = 'dashboard', arg] = (location.hash.slice(1) || 'dashboard').split('/');
-  app.innerHTML = ''; tools.innerHTML = '';
-  document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('active', a.dataset.v === (v === 'page' ? 'pages' : v)));
-  try {
-    await ({ dashboard, pages: pagesList, page: () => pageEditor(arg === 'new' ? null : arg), blocks: () => blockBuilder(arg), media: mediaView, categories: categoriesView, settings: settingsView }[v] || dashboard)();
-  } catch (e) { if (!e.error) console.error(e); }
-}
-addEventListener('hashchange', go); go();
+/* ───────── Boot (the server-side router decides which view; PAGE comes from the PHP layout) ───────── */
+(async () => {
+  const id = PAGE.id;
+  const views = { dashboard, pages: pagesList, page: () => pageEditor(id), blocks: () => blockBuilder(id), media: mediaView, categories: categoriesView, settings: settingsView };
+  try { await (views[PAGE.view] || dashboard)(); } catch (e) { if (!e.error) console.error(e); }
+})();

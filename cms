@@ -1,0 +1,63 @@
+#!/usr/bin/env php
+<?php
+// Console: php cms <command> [--option=value]
+if (PHP_SAPI !== 'cli') exit('CLI only');
+require __DIR__ . '/bootstrap.php';
+
+$argv = $_SERVER['argv']; $cmd = $argv[1] ?? 'list'; $o = [];
+foreach (array_slice($argv, 2) as $a) if (preg_match('/^--([\w-]+)(?:=(.*))?$/s', $a, $m)) $o[$m[1]] = $m[2] ?? true;
+
+function out(string $s = ''): void { echo $s . PHP_EOL; }
+function fail(string $s): never { fwrite(STDERR, "\033[31m$s\033[0m" . PHP_EOL); exit(1); }
+function ask(string $q, bool $hidden = false): string {
+    echo $q;
+    if ($hidden && DIRECTORY_SEPARATOR === '/') { system('stty -echo'); $v = trim((string)fgets(STDIN)); system('stty echo'); echo PHP_EOL; return $v; }
+    return trim((string)fgets(STDIN));
+}
+function db(): PDO { return Db::pdo() ?? fail('Cannot connect to MySQL. Check DB_* in .env'); }
+
+try {
+    switch ($cmd) {
+        case 'migrate':
+            $d = (new Migrator(db()))->up(); foreach ($d as $n) out("Migrated:    $n"); if (!$d) out('Nothing to migrate.'); break;
+        case 'migrate:rollback':
+            $d = (new Migrator(db()))->rollback(); foreach ($d as $n) out("Rolled back: $n"); if (!$d) out('Nothing to roll back.'); break;
+        case 'migrate:status':
+            foreach ((new Migrator(db()))->status() as $n => $b) out(($b ? "[batch $b] " : '[pending] ') . $n); break;
+        case 'make:migration':
+            $name = slugify($argv[2] ?? '') ?: fail('Usage: php cms make:migration create_posts_table');
+            $name = str_replace('-', '_', $name); $f = ROOT . '/database/migrations/' . date('Y_m_d_His') . "_$name.php";
+            file_put_contents($f, "<?php\nreturn new class {\n    function up(PDO \$db): void {\n        \$db->exec(\"\");\n    }\n    function down(PDO \$db): void {\n        \$db->exec(\"\");\n    }\n};\n");
+            out('Created: ' . substr($f, strlen(ROOT) + 1)); break;
+        case 'make:user':
+            $name = $o['name'] ?? ask('Name: '); $user = $o['username'] ?? ask('Username: '); $email = $o['email'] ?? ask('Email (optional): ');
+            $pw = $o['password'] ?? null;
+            if (!$pw) { $pw = ask('Password (min 10 chars): ', true); if ($pw !== ask('Confirm password: ', true)) fail('Passwords do not match.'); }
+            $id = Auth::createUser((string)$name, (string)$user, (string)$email, (string)$pw, (string)($o['role'] ?? 'admin'));
+            out("User #$id created. Login at /admin/login"); break;
+        case 'user:list':
+            foreach (Db::all(db(), 'SELECT id, username, name, role, last_login_at, last_login_ip, last_login_os, last_login_browser FROM users ORDER BY id') as $u)
+                out(sprintf('#%d %-16s %-20s %-6s last login: %s', $u['id'], $u['username'], $u['name'], $u['role'], $u['last_login_at'] ? "{$u['last_login_at']} UTC · {$u['last_login_ip']} · {$u['last_login_os']} · {$u['last_login_browser']}" : 'never'));
+            break;
+        case 'user:password':
+            $user = $argv[2] ?? fail('Usage: php cms user:password <username>');
+            $u = Db::all(db(), 'SELECT id FROM users WHERE username = ?', [$user])[0] ?? fail('No such user.');
+            $pw = ask('New password: ', true); if ($pw !== ask('Confirm password: ', true)) fail('Passwords do not match.');
+            Auth::setPassword((int)$u['id'], $pw); out('Password updated; all sessions of this user were revoked.'); break;
+        case 'user:logout':   // revoke every session (e.g. after a suspected cookie theft)
+            $user = $argv[2] ?? fail('Usage: php cms user:logout <username>');
+            $n = db()->prepare('UPDATE user_sessions s JOIN users u ON u.id = s.user_id SET s.revoked_at = ? WHERE u.username = ? AND s.revoked_at IS NULL');
+            $n->execute([gmdate('Y-m-d H:i:s'), $user]); out($n->rowCount() . ' session(s) revoked.'); break;
+        case 'db:seed':
+            $db = db();
+            if (Db::all($db, 'SELECT ID FROM products LIMIT 1')) { out('products table is not empty, skipped.'); break; }
+            $db->prepare('INSERT INTO products (reference, title, size, price, description) VALUES (?,?,?,?,?)')->execute(['K0507-01', 'PRECICE® ADK Assay Kit', '1 plate, 96 assays', 530, 'Non-radioactive, HTS-ready assay kit to measure human adenosine kinase (ADK) activity.']);
+            out('Seeded 1 product.'); break;
+        case 'compile':
+            foreach (Renderer::compileAll() as $f) out("Wrote $f"); break;
+        case 'serve':
+            $h = $o['host'] ?? 'localhost:8000'; passthru('php -S ' . escapeshellarg($h) . ' -t ' . escapeshellarg(ROOT . '/public') . ' ' . escapeshellarg(ROOT . '/public/index.php')); break;
+        default:
+            out("Custom CMS console\n\n  migrate                  Run pending migrations\n  migrate:rollback         Roll back the last batch\n  migrate:status           Show migration status\n  make:migration <name>    Create a migration file\n  make:user                Create an admin user (prompts, or --name= --username= --email= --password=)\n  user:list                List users and last login device\n  user:password <user>     Change a user's password (revokes sessions)\n  user:logout <user>       Revoke all sessions of a user\n  db:seed                  Insert a sample product\n  compile                  Export published pages to dist/\n  serve [--host=h:p]       Start the PHP dev server");
+    }
+} catch (Throwable $e) { fail($e->getMessage()); }

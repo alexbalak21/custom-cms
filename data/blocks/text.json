@@ -1,0 +1,23 @@
+{
+    "id": "text",
+    "label": "Text",
+    "category": "Content",
+    "fields": [
+        {
+            "name": "title",
+            "type": "text",
+            "label": "Title"
+        },
+        {
+            "name": "body",
+            "type": "textarea",
+            "label": "Body"
+        }
+    ],
+    "template": "<h2>{{title}}</h2>\n<p style=\"white-space:pre-line\">{{body}}</p>",
+    "css": "",
+    "sample": {
+        "title": "Contact",
+        "body": "Write to us at info@example.com"
+    }
+}

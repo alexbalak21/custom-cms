@@ -1,0 +1,27 @@
+{
+    "id": "contact",
+    "title": "Contact",
+    "slug": "contact",
+    "category": "",
+    "status": "published",
+    "nav": true,
+    "vars": {},
+    "seo": {
+        "description": "Contact us."
+    },
+    "blocks": [
+        {
+            "block": "text",
+            "content": {
+                "title": "Contact",
+                "body": "Write to us at info@example.com"
+            },
+            "settings": {
+                "theme": "default",
+                "spacing": "large",
+                "container": "boxed"
+            }
+        }
+    ],
+    "updated_at": "2026-10-26T22:19:49+00:00"
+}

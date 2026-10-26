@@ -1,0 +1,37 @@
+{
+    "id": "product-list",
+    "label": "Product list (MySQL)",
+    "category": "Commerce",
+    "fields": [
+        {
+            "name": "heading",
+            "type": "text",
+            "label": "Heading"
+        },
+        {
+            "name": "category",
+            "type": "text",
+            "label": "DB category (empty = all)"
+        },
+        {
+            "name": "limit",
+            "type": "text",
+            "label": "Max products"
+        }
+    ],
+    "rpc": {
+        "call": "products.list",
+        "params": {
+            "category": "@content.category",
+            "limit": "@content.limit"
+        },
+        "as": "products"
+    },
+    "template": "<h2 class=\"mb-4\">{{heading}}</h2>\n<div class=\"row g-4\">\n{{#each products}}\n<div class=\"col-md-4\"><div class=\"card h-100\"><div class=\"card-body\"><h5>{{name}}</h5><p class=\"text-muted\">{{summary}}</p><p class=\"fw-bold\">€{{price}}</p></div><div class=\"card-footer bg-transparent border-0\"><a href=\"{{url}}\" class=\"btn btn-outline-primary btn-sm\">View</a></div></div></div>\n{{/each}}\n</div>",
+    "css": "",
+    "sample": {
+        "heading": "Products",
+        "category": "",
+        "limit": "6"
+    }
+}

@@ -20,7 +20,7 @@
         "title": "Ready to start?",
         "button": {
             "label": "Contact us",
-            "url": "#"
+            "url": "/contact"
         }
     }
 }

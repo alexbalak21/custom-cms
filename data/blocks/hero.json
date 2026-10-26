@@ -22,17 +22,22 @@
             "name": "cta",
             "type": "link",
             "label": "Button"
+        },
+        {
+            "name": "image",
+            "type": "image",
+            "label": "Image"
         }
     ],
     "template": "<span class=\"text-uppercase small opacity-75\">{{eyebrow}}</span>\n<h1 class=\"display-4 fw-bold\">{{title}}</h1>\n<p class=\"lead\">{{description}}</p>\n<a class=\"btn btn-primary btn-lg\" href=\"{{cta.url}}\">{{cta.label}}</a>",
     "css": "& h1 { letter-spacing: -.02em; }\n& .btn { border-radius: 999px; }",
     "sample": {
         "eyebrow": "Industrial Excellence",
-        "title": "Custom Wiring Solutions",
+        "title": "Custom Solutions",
         "description": "Built for demanding environments.",
         "cta": {
             "label": "Get a quote",
-            "url": "#contact"
+            "url": "/contact"
         }
     }
 }

@@ -1,31 +1,33 @@
-<?php $v = ($_GET['v'] ?? 'pages') === 'blocks' ? 'blocks' : 'pages'; ?>
-<!doctype html>
-<html lang="en" data-bs-theme="dark"><head><meta charset="utf-8">
-<title>Enwires Builder</title>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-<style>
-html,body{height:100%} body{display:flex;flex-direction:column}
-.main{flex:1;min-height:0;display:flex}
-.split{flex:1;min-height:0;display:flex;flex-direction:column}
-.split.rev{flex-direction:column-reverse}
-.pane{min-height:0;overflow:auto}
-iframe{width:100%;height:100%;border:0;background:#fff}
-.preview{flex:1 1 50%} .editor{flex:1 1 50%;padding:.75rem}
-.editor textarea{font-family:ui-monospace,monospace;font-size:.85rem;height:100%;resize:none}
-.editor textarea.bad{border-color:#dc3545}
-.side{width:400px;flex:none;overflow:auto;padding:.75rem;border-right:1px solid var(--bs-border-color)}
-.pv{flex:1;min-width:0}
-</style></head>
-<body>
-<nav class="navbar bg-body-tertiary px-3 py-2 gap-3 flex-wrap">
-  <span class="navbar-brand mb-0 h1">Enwires Builder</span>
-  <ul class="nav nav-pills">
-    <li class="nav-item"><a class="nav-link <?= $v=='pages'?'active':'' ?>" href="?v=pages">Page Builder</a></li>
-    <li class="nav-item"><a class="nav-link <?= $v=='blocks'?'active':'' ?>" href="?v=blocks">Block Builder</a></li>
-  </ul>
-  <div id="tools" class="d-flex gap-2 align-items-center ms-auto flex-wrap"></div>
-</nav>
-<div class="main" id="app"></div>
-<script>const VIEW = <?= json_encode($v) ?>;</script>
-<script src="app.js"></script>
-</body></html>
+<?php
+// Public front controller / router
+require __DIR__ . '/lib.php';
+$uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+if (PHP_SAPI === 'cli-server' && preg_match('#^/(admin|uploads)(/|$)#', $uri) && (is_file(__DIR__ . $uri) || is_dir(__DIR__ . $uri))) return false;
+$path = trim(substr($uri, strlen(rtrim(cfg('base_path', ''), '/'))), '/');
+$seg = $path === '' ? [] : array_map('rawurldecode', explode('/', $path));
+$site = Store::json('site', []) ?: ['name' => cfg('site_name'), 'base_url' => cfg('base_url')];
+$base = rtrim($site['base_url'] ?? cfg('base_url'), '/');
+
+if (($seg[0] ?? '') === 'rpc' && isset($seg[1])) {            // /rpc/products.list?category=x
+    header('Content-Type: application/json');
+    $proc = Rpc::procs()[$seg[1]] ?? null;
+    if (!$proc || empty($proc['public'])) { http_response_code(404); echo '{"error":"unknown procedure"}'; exit; }
+    $params = $_GET + (json_decode(file_get_contents('php://input'), true) ?: []);
+    echo json_encode(Rpc::call($seg[1], $params), JSON_UNESCAPED_UNICODE); exit;
+}
+if ($path === 'robots.txt') { header('Content-Type: text/plain'); echo "User-agent: *\nDisallow: /admin/\nSitemap: $base/sitemap.xml\n"; exit; }
+if ($path === 'sitemap.xml') {
+    header('Content-Type: application/xml');
+    echo '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">';
+    foreach (Store::all('pages') as $p) if (($p['status'] ?? '') === 'published' && empty($p['seo']['noindex'])) echo '<url><loc>' . e($base . '/' . Pages::path($p)) . '</loc><lastmod>' . e(substr($p['updated_at'] ?? gmdate('c'), 0, 10)) . '</lastmod></url>';
+    foreach (Store::json('categories', []) as $c) echo '<url><loc>' . e("$base/{$c['slug']}") . '</loc></url>';
+    echo '</urlset>'; exit;
+}
+
+$drafts = false;                                                // logged-in admins may preview drafts with ?preview=1
+if (isset($_GET['preview']) && isset($_COOKIE['custom_cms'])) { Auth::start(); $drafts = (bool)Auth::user(); }
+$page = match (count($seg)) { 0 => Pages::find('', '', $drafts), 1 => Pages::find('', $seg[0], $drafts), 2 => Pages::find($seg[0], $seg[1], $drafts), default => null };
+if ($page) { echo Renderer::page($page); exit; }
+if (count($seg) === 1) foreach (Store::json('categories', []) as $c) if ($c['slug'] === $seg[0]) { echo Renderer::category($c); exit; }
+http_response_code(404);
+echo ($nf = Pages::find('', '404')) ? Renderer::page($nf) : Renderer::notFound();

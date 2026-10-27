@@ -105,7 +105,8 @@ async function pageEditor(id) {
   let P = pages.find(p => p.id === id) || { id: 'p' + Date.now().toString(36), title: '', slug: '', category: '', status: 'draft', nav: false, vars: {}, seo: {}, blocks: [], _new: true };
   if (Array.isArray(P.vars)) P.vars = {};
   let tab = 'blocks';
-  const clean = () => { const { _new, ...r } = P; return { ...r, blocks: P.blocks.map(({ _open, ...b }) => b) }; };
+  const strip = l => l.map(({ _open, ...b }) => ({ ...b, ...(b.children ? { children: strip(b.children) } : {}) }));
+  const clean = () => { const { _new, ...r } = P; return { ...r, blocks: strip(P.blocks) }; };
   const side = el('div', 'side'), pv = el('div', 'pv'), frame = el('iframe'); pv.append(frame); app.append(side, pv);
   const upd = debounce(() => preview(frame, { page: clean() }));
   const view = el('a', 'btn btn-sm btn-outline-secondary', 'View live'); view.target = '_blank';
@@ -123,25 +124,43 @@ async function pageEditor(id) {
     ({ blocks: tabBlocks, page: tabPage, seo: tabSeo })[tab]();
     upd();
   }
-  function tabBlocks() {
-    P.blocks.forEach((it, i) => {
+  const WIDTHS = ['auto', ...Array.from({ length: 12 }, (_, k) => String(k + 1))], NESTED = { theme: 'default', spacing: 'none', width: 'auto' };
+  // Recursive block tree (max 4 levels). Children of a "row" container get a column width.
+  function blockList(list, box, depth, parent) {
+    list.forEach((it, i) => {
       const d = def(it.block); if (!d) return;
       const card = el('div', 'card mb-2'), h = el('div', 'card-header d-flex align-items-center gap-1 py-1');
-      const title = el('span', 'flex-fill fw-semibold', esc(d.label)); title.style.cursor = 'pointer'; title.onclick = () => { it._open = !it._open; drawSide(); };
-      const mv = k => () => { const j = i + k; if (j < 0 || j >= P.blocks.length) return; [P.blocks[i], P.blocks[j]] = [P.blocks[j], P.blocks[i]]; drawSide(); };
-      h.append(title, btn('↑', mv(-1)), btn('↓', mv(1)), btn('✕', () => { P.blocks.splice(i, 1); drawSide(); }, 'btn-outline-danger')); card.append(h);
+      const title = el('span', 'flex-fill fw-semibold', esc(d.label) + (d.container ? ` <span class="badge text-bg-secondary">${d.layout === 'row' ? 'row' : 'container'}</span>` : '') + (it.children?.length ? ` <span class="text-muted small">(${it.children.length})</span>` : ''));
+      title.style.cursor = 'pointer'; title.onclick = () => { it._open = !it._open; drawSide(); };
+      const mv = k => () => { const j = i + k; if (j < 0 || j >= list.length) return; [list[i], list[j]] = [list[j], list[i]]; drawSide(); };
+      h.append(title, btn('↑', mv(-1)), btn('↓', mv(1)), btn('✕', () => { list.splice(i, 1); drawSide(); }, 'btn-outline-danger')); card.append(h);
       if (it._open) {
         const body = el('div', 'card-body p-2'), row = el('div', 'd-flex gap-1 mb-2'); it.settings = it.settings || {}; it.content = it.content || {};
-        Object.entries(SET).forEach(([k, o]) => row.append(select(o, it.settings[k] || DEF[k], v => { it.settings[k] = v; upd(); })));
+        const S = depth === 1 ? SET : { theme: SET.theme, spacing: SET.spacing, ...(parent?.layout === 'row' ? { width: WIDTHS } : {}) }, D = depth === 1 ? DEF : NESTED;
+        Object.entries(S).forEach(([k, o]) => row.append(select(o, String(it.settings[k] ?? D[k]), v => { it.settings[k] = v; upd(); })));
         body.append(row); renderFields(d.fields || [], it.content, body, upd);
         if (d.rpc) body.append(el('div', 'small text-info', `Data: <code>${esc(d.rpc.call)}</code> → <code>${esc(d.rpc.as)}</code>`));
+        if (d.container) {
+          it.children = it.children || [];
+          const kids = el('div', 'border-start border-2 ps-2 mt-2'); kids.append(el('div', 'small text-muted mb-1', `Children · level ${depth + 1} of 4${d.layout === 'row' ? ' · set each child\'s width (1–12)' : ''}`));
+          blockList(it.children, kids, depth + 1, d);
+          kids.append(depth < 4 ? addRow(it.children, depth + 1) : el('div', 'small text-warning', 'Maximum nesting depth reached'));
+          body.append(kids);
+        }
         card.append(body);
       }
-      side.append(card);
+      box.append(card);
     });
-    const add = select(blocks.map(b => [b.id, `${b.label} · ${b.category || ''}`]), blocks[0]?.id, () => {}), r = el('div', 'd-flex gap-1 mt-3');
-    r.append(add, btn('+ Add', () => { const d = def(add.value); P.blocks.push({ block: d.id, content: JSON.parse(JSON.stringify(d.sample || {})), settings: { ...DEF }, _open: true }); drawSide(); }, 'btn-primary')); side.append(r);
   }
+  function addRow(list, depth) {
+    const add = select(blocks.map(b => [b.id, `${b.label} · ${b.category || ''}`]), blocks[0]?.id, () => {}), r = el('div', 'd-flex gap-1 mt-2');
+    r.append(add, btn('+ Add', () => {
+      const d = def(add.value);
+      list.push({ block: d.id, content: JSON.parse(JSON.stringify(d.sample || {})), settings: depth === 1 ? { ...DEF } : { ...NESTED }, ...(d.container ? { children: [] } : {}), _open: true }); drawSide();
+    }, 'btn-primary'));
+    return r;
+  }
+  function tabBlocks() { blockList(P.blocks, side, 1, null); side.append(addRow(P.blocks, 1)); }
   function tabPage() {
     let slugIn;
     const t = input('text', P.title, v => { P.title = v; if (P._new && !P._touched) { P.slug = slug(v); slugIn.value = P.slug; } upd(); }, 'Title');
@@ -193,7 +212,7 @@ async function blockBuilder(id) {
     btn('⇅ Preview top/bottom', () => { flipped = !flipped; split.classList.toggle('rev', flipped); }));
   const split = el('div', 'split'), pv = el('div', 'pane preview'), ed = el('div', 'pane editor d-flex flex-column'), frame = el('iframe'); pv.append(frame);
   const upd = debounce(() => preview(frame, { block: B })), tabs = el('ul', 'nav nav-tabs mb-2'), areas = {}, wrap = el('div', 'flex-fill'); wrap.style.minHeight = 0;
-  const lab = input('text', '', v => B.label = v, 'Label'), cat = input('text', '', v => B.category = v, 'Category'), meta = el('div', 'd-flex gap-2 mb-2'); meta.append(lab, cat);
+  const lab = input('text', '', v => B.label = v, 'Label'), cat = input('text', '', v => B.category = v, 'Category'), meta = el('div', 'd-flex gap-2 mb-2'); const kind = select([['', 'Normal block'], ['stack', 'Container: stack (use {{{children}}})'], ['row', 'Container: row of columns (use {{{children}}})']], '', v => { if (v) { B.container = true; B.layout = v; } else { delete B.container; delete B.layout; } upd(); }); meta.append(lab, cat, kind);
   [['template', 'HTML template (Bootstrap)'], ['css', 'Custom CSS'], ['fields', 'Fields (JSON)'], ['sample', 'Sample content (JSON)'], ['rpc', 'Data / RPC (JSON)']].forEach(([k, label], i) => {
     const li = el('li', 'nav-item', `<a class="nav-link ${i ? '' : 'active'}" href="#">${label}</a>`), ta = el('textarea', 'form-control'); ta.style.display = i ? 'none' : ''; areas[k] = ta; wrap.append(ta);
     if (k === 'rpc') ta.placeholder = `{ "call": "${me.procedures[0]}", "params": { "category": "@content.category" }, "as": "products" }\n\nAvailable: ${me.procedures.join(', ')}\nParams: @content.x (block field) · @page.vars.x (page variable)`;
@@ -206,7 +225,7 @@ async function blockBuilder(id) {
   });
   ed.append(meta, tabs, wrap); split.append(pv, ed); app.append(split);
   function load() {
-    lab.value = B.label || ''; cat.value = B.category || ''; areas.template.value = B.template || ''; areas.css.value = B.css || '';
+    kind.value = B.container ? (B.layout || 'stack') : ''; lab.value = B.label || ''; cat.value = B.category || ''; areas.template.value = B.template || ''; areas.css.value = B.css || '';
     areas.fields.value = JSON.stringify(B.fields || [], null, 2); areas.sample.value = JSON.stringify(B.sample || {}, null, 2); areas.rpc.value = B.rpc ? JSON.stringify(B.rpc, null, 2) : '';
     refresh(); pick.value = B.id; upd();
   }

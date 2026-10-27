@@ -25,10 +25,26 @@ class Store {
     static function json(string $name, $def = []) { $f = ROOT . "/storage/data/$name.json"; return is_file($f) ? json_decode(file_get_contents($f), true) : $def; }
     static function put(string $name, $d): void { self::dir('blocks'); file_put_contents(ROOT . "/storage/data/$name.json", json_encode($d, JF)); }
 
+    // Layout blocks for nesting (created once; safe to edit or delete afterwards)
+    static function ensureNesting(): void {
+        static $r = false; if ($r) return; $r = true;
+        if (self::json('nesting_defaults', false)) return;
+        $defs = [
+          ['id'=>'row','label'=>'Row (columns)','category'=>'Layout','container'=>true,'layout'=>'row','fields'=>[],'template'=>'<div class="row g-4">{{{children}}}</div>','css'=>'','sample'=>new stdClass],
+          ['id'=>'stack','label'=>'Stack (vertical)','category'=>'Layout','container'=>true,'layout'=>'stack','fields'=>[],'template'=>'{{{children}}}','css'=>'','sample'=>new stdClass],
+          ['id'=>'card','label'=>'Card','category'=>'Content','fields'=>[['name'=>'title','type'=>'text','label'=>'Title'],['name'=>'text','type'=>'textarea','label'=>'Text'],['name'=>'link','type'=>'link','label'=>'Button (optional)']],
+           'template'=>"<div class=\"card h-100\"><div class=\"card-body\"><h5 class=\"card-title\">{{title}}</h5><p class=\"card-text\">{{text}}</p>{{#if link.label}}<a class=\"btn btn-outline-primary btn-sm\" href=\"{{link.url}}\">{{link.label}}</a>{{/if}}</div></div>",
+           'css'=>'','sample'=>['title'=>'Card title','text'=>'Card text.','link'=>['label'=>'','url'=>'']]],
+        ];
+        foreach ($defs as $b) if (!self::get('blocks', $b['id'])) self::save('blocks', $b);
+        self::put('nesting_defaults', true);
+    }
+
     static function seed(): void {
         static $done = false; if ($done) return; $done = true;
-        Form::ensureDefaults();
-        if (glob(self::dir('blocks') . '/*.json')) return;
+        $fresh = !glob(self::dir('blocks') . '/*.json');     // decide BEFORE defaults create any block
+        Form::ensureDefaults(); self::ensureNesting();
+        if (!$fresh) return;
         $blocks = [
           ['id'=>'hero','label'=>'Hero','category'=>'Marketing',
            'fields'=>[['name'=>'eyebrow','type'=>'text','label'=>'Eyebrow'],['name'=>'title','type'=>'text','label'=>'Title'],['name'=>'description','type'=>'textarea','label'=>'Description'],['name'=>'cta','type'=>'link','label'=>'Button'],['name'=>'image','type'=>'image','label'=>'Image']],
@@ -70,8 +86,10 @@ class Store {
 {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Is the ADK Assay Kit radioactive?","acceptedAnswer":{"@type":"Answer","text":"No. It is a non-radioactive, homogeneous assay monitored at 340 nm."}}]}
 </script>
 LD;
+        $card = fn($t, $x) => ['block'=>'card','content'=>['title'=>$t,'text'=>$x,'link'=>['label'=>'','url'=>'']],'settings'=>['theme'=>'default','spacing'=>'none','width'=>'4']];
+        $rowDemo = ['block'=>'row','content'=>new stdClass,'settings'=>['theme'=>'default','spacing'=>'large','container'=>'boxed'],'children'=>[$card('Durable','Tested in harsh conditions.'),$card('Custom','Designed to your spec.'),$card('Fast','Short lead times.')]];
         Pages::save(['id'=>'home','title'=>'Home','slug'=>'','category'=>'','status'=>'published','nav'=>false,'vars'=>new stdClass,'seo'=>['title'=>'Custom CMS - Home','description'=>'Welcome to Custom CMS.'],
-            'blocks'=>[$S($blocks[0],'xl','dark'), $S($blocks[4]), $S($blocks[1],'large','light'), $S($blocks[2],'large','primary','narrow')]]);
+            'blocks'=>[$S($blocks[0],'xl','dark'), $S($blocks[4]), $S($blocks[1],'large','light'), $rowDemo, $S($blocks[2],'large','primary','narrow')]]);
         Pages::save(['id'=>'contact','title'=>'Contact','slug'=>'contact','category'=>'','status'=>'published','nav'=>true,'vars'=>new stdClass,'seo'=>['description'=>'Contact us.'],'blocks'=>[$S($blocks[3]), ['block'=>'contact-form','content'=>['heading'=>'Send us a message','intro'=>'We usually reply within one business day.','form'=>'contact'],'settings'=>['theme'=>'light','spacing'=>'large','container'=>'boxed']]]]);
         Pages::save(['id'=>'adk-assay-kit','title'=>'PRECICE® ADK Assay Kit','slug'=>'adk-assay-kit','category'=>'convenient-assay-kits','status'=>'published','nav'=>false,'vars'=>['reference'=>'K0507-01'],
             'seo'=>['title'=>'PRECICE® ADK Assay Kit - Human Adenosine Kinase Activity Assay','description'=>"Non-radioactive, HTS-ready assay kit to measure human adenosine kinase (ADK) activity and screen ADK inhibitors. 96-well plate format, Z'-factor 0.68.",'keywords'=>'ADK assay kit, adenosine kinase assay, adenosine kinase inhibitor screening, HTS ADK assay','og_title'=>'PRECICE® ADK Assay Kit','og_type'=>'product','og_image'=>'','jsonld_raw'=>$ld],
@@ -91,11 +109,13 @@ class Pages {
     }
     // map of var value => page url (e.g. product reference => /category/page)
     static function byVar(string $k): array { $o = []; foreach (Store::all('pages') as $p) if (($p['status'] ?? '') === 'published' && !empty($p['vars'][$k])) $o[$p['vars'][$k]] = self::url($p); return $o; }
+    static function depth(array $blocks): int { $m = 0; foreach ($blocks as $b) $m = max($m, 1 + self::depth($b['children'] ?? [])); return $m; }
     static function save(array $p): array {
         $p['title'] = trim($p['title'] ?? '') ?: 'Untitled';
         $p['slug'] = slugify($p['slug'] ?? ''); $p['category'] = slugify($p['category'] ?? '');
         $p['status'] = in_array($p['status'] ?? '', ['draft', 'published']) ? $p['status'] : 'draft';
         $p['vars'] = $p['vars'] ?? new stdClass;
+        if (self::depth($p['blocks'] ?? []) > Renderer::MAX_DEPTH) throw new RuntimeException('Blocks are nested too deeply (maximum 4 levels)');
         if ($p['slug'] === '' && $p['category'] !== '') throw new RuntimeException('A page in a category needs a slug');
         if ($p['category'] === '' && in_array($p['slug'], self::RESERVED)) throw new RuntimeException('Reserved slug');
         if ($p['category'] === '' && $p['slug'] !== '') foreach (Store::json('categories', []) as $c) if ($c['slug'] === $p['slug']) throw new RuntimeException('Slug is used by a category');
@@ -166,13 +186,14 @@ class Renderer {
 
     static function get($d, string $p) { foreach (explode('.', $p) as $k) { if (!is_array($d) || !array_key_exists($k, $d)) return null; $d = $d[$k]; } return $d; }
     static function path(array $d, string $p): string { $v = self::get($d, $p); return is_scalar($v) ? (string)$v : ''; }
-    // {{x}} escaped · {{{x}}} raw · {{a.b}} · {{#each list}}…{{/each}} · {{this}}
+    // {{x}} escaped · {{{x}}} raw · {{a.b}} · {{#each list}}…{{/each}} · {{#if x}}…{{/if}} · {{this}}
     static function tpl(string $t, array $d): string {
         $t = preg_replace_callback('/\{\{#each ([\w.]+)\}\}(.*?)\{\{\/each\}\}/s', function ($m) use ($d) {
             $o = ''; foreach ((array)(self::get($d, $m[1]) ?? []) as $it) $o .= self::tpl($m[2], is_array($it) ? $it : ['this' => $it]); return $o;
         }, $t);
-        $t = preg_replace_callback('/\{\{\{([\w.]+)\}\}\}/', fn($m) => self::path($d, $m[1]), $t);
-        return preg_replace_callback('/\{\{([\w.]+)\}\}/', fn($m) => e(self::path($d, $m[1])), $t);
+        $t = preg_replace_callback('/\{\{#if ([\w.]+)\}\}(.*?)\{\{\/if\}\}/s', fn($m) => !empty(self::get($d, $m[1])) ? $m[2] : '', $t);
+        return preg_replace_callback('/\{\{\{([\w.]+)\}\}\}|\{\{([\w.]+)\}\}/',
+            fn($m) => isset($m[2]) ? str_replace(['{', '}'], ['&#123;', '&#125;'], e(self::path($d, $m[2]))) : self::path($d, $m[1]), $t);
     }
     // "@content.x" / "@page.vars.sku" / literal
     static function resolve($v, array $content, array $ctx) {
@@ -181,7 +202,14 @@ class Renderer {
         $src = $root === 'page' ? ($ctx['page'] ?? []) : $content;
         return $rest === '' ? $src : self::get($src, $rest);
     }
-    static function section(array $b, array $content, array $s, array $ctx = []): string {
+    const MAX_DEPTH = 4;
+    static array $cssBag = [];
+    static function instance(array $i, array $ctx, int $depth): string {
+        if ($depth > self::MAX_DEPTH || !($b = Store::get('blocks', $i['block'] ?? ''))) return '';
+        return self::section($b, $i['content'] ?? [], $i['settings'] ?? [], $ctx, $i['children'] ?? [], $depth);
+    }
+    static function section(array $b, array $content, array $s, array $ctx = [], array $children = [], int $depth = 1): string {
+        self::$cssBag[$b['id'] ?? 'x'] = self::css($b);
         $data = $content; $data['page'] = $ctx['page'] ?? [];
         if (($b['component'] ?? '') === 'form') $data['form_html'] = Form::html(Form::get($content['form'] ?? 'contact'));
         if (!empty($b['rpc']['call'])) {
@@ -189,9 +217,20 @@ class Renderer {
             foreach ($r['params'] ?? [] as $k => $v) $params[$k] = self::resolve($v, $content, $ctx);
             $data[$r['as'] ?? 'data'] = Rpc::call($r['call'], $params) ?? [];
         }
-        $cls = trim('blk blk-' . Store::id($b['id'] ?? 'x') . ' ' . (self::THEME[$s['theme'] ?? 'default'] ?? '') . ' ' . (self::SPACING[$s['spacing'] ?? 'medium'] ?? ''));
+        if (!empty($b['container'])) {                       // nested blocks: render children, expose as {{{children}}}
+            $kids = '';
+            foreach ($children as $ch) {
+                $html = self::instance($ch, $ctx, $depth + 1); if ($html === '') continue;
+                if (($b['layout'] ?? 'stack') === 'row') { $w = (int)($ch['settings']['width'] ?? 0); $html = '<div class="' . ($w >= 1 && $w <= 12 ? "col-12 col-md-$w" : 'col-12 col-md') . "\">$html</div>"; }
+                $kids .= $html;
+            }
+            $data['children'] = $kids;
+        }
+        $cls = trim('blk blk-' . Store::id($b['id'] ?? 'x') . ' ' . (self::THEME[$s['theme'] ?? 'default'] ?? '') . ' ' . (self::SPACING[$s['spacing'] ?? ($depth > 1 ? 'none' : 'medium')] ?? ''));
+        $inner = self::tpl($b['template'] ?? '', $data);
+        if ($depth > 1) return "<div class=\"$cls\">$inner</div>\n";                      // nested: no <section>/container wrapper
         $con = self::CONTAINER[$s['container'] ?? 'boxed'] ?? 'container';
-        return "<section class=\"$cls\"><div class=\"$con\">" . self::tpl($b['template'] ?? '', $data) . "</div></section>\n";
+        return "<section class=\"$cls\"><div class=\"$con\">$inner</div></section>\n";
     }
     // Custom CSS scoped via native CSS nesting: & = the block
     static function css(array $b): string { $c = trim($b['css'] ?? ''); return $c === '' ? '' : '.blk-' . Store::id($b['id']) . " {\n$c\n}\n"; }
@@ -199,7 +238,8 @@ class Renderer {
         return "<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n$head<link href=\"https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css\" rel=\"stylesheet\">\n<style>\n$css</style></head>\n<body>\n$body<script src=\"https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js\"></script>\n</body></html>";
     }
     static function block(array $b): string {
-        return self::document('<title>' . e($b['label'] ?? 'Block') . "</title>\n", self::section($b, $b['sample'] ?? [], ['theme'=>'default','spacing'=>'medium','container'=>'boxed']), self::css($b));
+        self::$cssBag = [];
+        return self::document('<title>' . e($b['label'] ?? 'Block') . "</title>\n", self::section($b, $b['sample'] ?? [], ['theme'=>'default','spacing'=>'medium','container'=>'boxed']), implode("\n", self::$cssBag));
     }
     static function chrome(string $main, array $site): string {
         $links = '<li class="nav-item"><a class="nav-link" href="' . url() . '">Home</a></li>';
@@ -209,12 +249,9 @@ class Renderer {
         return '<nav class="navbar navbar-expand bg-body-tertiary"><div class="container"><a class="navbar-brand" href="' . url() . '">' . e($site['name'] ?? '') . "</a><ul class=\"navbar-nav me-auto\">$links</ul><form class=\"d-flex\" action=\"" . url('search') . "\"><input class=\"form-control form-control-sm\" type=\"search\" name=\"q\" placeholder=\"Search\" aria-label=\"Search\"></form></div></nav>\n<main>$main</main>\n<footer class=\"py-4 text-center text-muted small\">© " . date('Y') . ' ' . e($site['name'] ?? '') . "</footer>\n";
     }
     static function page(array $p): string {
-        $site = Store::json('site', []); $body = ''; $css = []; $ctx = ['page' => $p];
-        foreach ($p['blocks'] ?? [] as $i) {
-            if (!($b = Store::get('blocks', $i['block'] ?? ''))) continue;
-            $body .= self::section($b, $i['content'] ?? [], $i['settings'] ?? [], $ctx); $css[$b['id']] = self::css($b);
-        }
-        return self::document(Seo::head($p, $site, Pages::path($p)), self::chrome($body, $site), implode("\n", $css));
+        $site = Store::json('site', []); $body = ''; $ctx = ['page' => $p]; self::$cssBag = [];
+        foreach ($p['blocks'] ?? [] as $i) $body .= self::instance($i, $ctx, 1);
+        return self::document(Seo::head($p, $site, Pages::path($p)), self::chrome($body, $site), implode("\n", self::$cssBag));
     }
     static function category(array $c): string {
         $site = Store::json('site', []); $cards = '';

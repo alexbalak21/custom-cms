@@ -20,6 +20,10 @@ $router->get('/sitemap.xml', function () {
     foreach (Store::json('categories', []) as $c) echo '<url><loc>' . e("$base/{$c['slug']}") . '</loc></url>';
     echo '</urlset>';
 });
+$router->get('/search', function () {
+    $q = trim((string)($_GET['q'] ?? ''));
+    echo Renderer::search($q, mb_strlen($q) >= 2 ? (Rpc::call('search.query', ['q' => $q, 'limit' => 20]) ?? []) : []);
+});
 $router->get('/',                     fn() => $serve('', '') || not_found());
 $router->get('/{slug}',               fn($p) => $serve('', $p['slug']) || not_found());
 $router->get('/{category}/{slug}',    fn($p) => $serve($p['category'], $p['slug']) || not_found());

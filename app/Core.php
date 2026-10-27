@@ -27,6 +27,7 @@ class Store {
 
     static function seed(): void {
         static $done = false; if ($done) return; $done = true;
+        Form::ensureDefaults();
         if (glob(self::dir('blocks') . '/*.json')) return;
         $blocks = [
           ['id'=>'hero','label'=>'Hero','category'=>'Marketing',
@@ -71,7 +72,7 @@ class Store {
 LD;
         Pages::save(['id'=>'home','title'=>'Home','slug'=>'','category'=>'','status'=>'published','nav'=>false,'vars'=>new stdClass,'seo'=>['title'=>'Custom CMS - Home','description'=>'Welcome to Custom CMS.'],
             'blocks'=>[$S($blocks[0],'xl','dark'), $S($blocks[4]), $S($blocks[1],'large','light'), $S($blocks[2],'large','primary','narrow')]]);
-        Pages::save(['id'=>'contact','title'=>'Contact','slug'=>'contact','category'=>'','status'=>'published','nav'=>true,'vars'=>new stdClass,'seo'=>['description'=>'Contact us.'],'blocks'=>[$S($blocks[3])]]);
+        Pages::save(['id'=>'contact','title'=>'Contact','slug'=>'contact','category'=>'','status'=>'published','nav'=>true,'vars'=>new stdClass,'seo'=>['description'=>'Contact us.'],'blocks'=>[$S($blocks[3]), ['block'=>'contact-form','content'=>['heading'=>'Send us a message','intro'=>'We usually reply within one business day.','form'=>'contact'],'settings'=>['theme'=>'light','spacing'=>'large','container'=>'boxed']]]]);
         Pages::save(['id'=>'adk-assay-kit','title'=>'PRECICE® ADK Assay Kit','slug'=>'adk-assay-kit','category'=>'convenient-assay-kits','status'=>'published','nav'=>false,'vars'=>['reference'=>'K0507-01'],
             'seo'=>['title'=>'PRECICE® ADK Assay Kit - Human Adenosine Kinase Activity Assay','description'=>"Non-radioactive, HTS-ready assay kit to measure human adenosine kinase (ADK) activity and screen ADK inhibitors. 96-well plate format, Z'-factor 0.68.",'keywords'=>'ADK assay kit, adenosine kinase assay, adenosine kinase inhibitor screening, HTS ADK assay','og_title'=>'PRECICE® ADK Assay Kit','og_type'=>'product','og_image'=>'','jsonld_raw'=>$ld],
             'blocks'=>[$S($blocks[5]), $S($blocks[2],'large','primary','narrow')]]);
@@ -182,6 +183,7 @@ class Renderer {
     }
     static function section(array $b, array $content, array $s, array $ctx = []): string {
         $data = $content; $data['page'] = $ctx['page'] ?? [];
+        if (($b['component'] ?? '') === 'form') $data['form_html'] = Form::html(Form::get($content['form'] ?? 'contact'));
         if (!empty($b['rpc']['call'])) {
             $r = $b['rpc']; $params = [];
             foreach ($r['params'] ?? [] as $k => $v) $params[$k] = self::resolve($v, $content, $ctx);
@@ -204,7 +206,7 @@ class Renderer {
         foreach (Store::json('categories', []) as $c) $links .= '<li class="nav-item"><a class="nav-link" href="' . url($c['slug']) . '">' . e($c['title']) . '</a></li>';
         foreach (Store::all('pages') as $p) if (!empty($p['nav']) && ($p['status'] ?? '') === 'published' && ($p['category'] ?? '') === '' && ($p['slug'] ?? '') !== '')
             $links .= '<li class="nav-item"><a class="nav-link" href="' . Pages::url($p) . '">' . e($p['title']) . '</a></li>';
-        return '<nav class="navbar navbar-expand bg-body-tertiary"><div class="container"><a class="navbar-brand" href="' . url() . '">' . e($site['name'] ?? '') . "</a><ul class=\"navbar-nav\">$links</ul></div></nav>\n<main>$main</main>\n<footer class=\"py-4 text-center text-muted small\">© " . date('Y') . ' ' . e($site['name'] ?? '') . "</footer>\n";
+        return '<nav class="navbar navbar-expand bg-body-tertiary"><div class="container"><a class="navbar-brand" href="' . url() . '">' . e($site['name'] ?? '') . "</a><ul class=\"navbar-nav me-auto\">$links</ul><form class=\"d-flex\" action=\"" . url(\'search\') . "\"><input class=\"form-control form-control-sm\" type=\"search\" name=\"q\" placeholder=\"Search\" aria-label=\"Search\"></form></div></nav>\n<main>$main</main>\n<footer class=\"py-4 text-center text-muted small\">© " . date('Y') . ' ' . e($site['name'] ?? '') . "</footer>\n";
     }
     static function page(array $p): string {
         $site = Store::json('site', []); $body = ''; $css = []; $ctx = ['page' => $p];
@@ -221,6 +223,13 @@ class Renderer {
         $body = '<section class="container py-5"><h1 class="mb-2">' . e($c['title']) . '</h1><p class="lead mb-4">' . e($c['description'] ?? '') . "</p><div class=\"row g-4\">$cards</div></section>";
         $fake = ['title' => $c['title'], 'seo' => ['description' => $c['description'] ?? '']];
         return self::document(Seo::head($fake, $site, $c['slug']), self::chrome($body, $site), '');
+    }
+    static function search(string $q, array $rows): string {
+        $site = Store::json('site', []); $items = '';
+        foreach ($rows as $r) { $u = preg_match('#^https?://#', $r['url']) ? $r['url'] : url($r['url']); $items .= '<a class="list-group-item list-group-item-action" href="' . e($u) . '"><h5 class="mb-1">' . e($r['title']) . '</h5><p class="mb-0 text-muted">' . e($r['excerpt'] ?? '') . '</p></a>'; }
+        if (!$rows && $q !== '') $items = '<p class="text-muted">' . (mb_strlen($q) < 2 ? 'Type at least 2 characters.' : 'No results for “' . e($q) . '”.') . '</p>';
+        $body = '<section class="container py-5"><h1 class="mb-4">Search</h1><form class="mb-4" action="' . url('search') . '"><div class="input-group"><input class="form-control" name="q" value="' . e($q) . '" aria-label="Search"><button class="btn btn-primary">Search</button></div></form><div class="list-group">' . $items . '</div></section>';
+        return self::document(Seo::head(['title' => 'Search', 'seo' => ['noindex' => true]], $site, 'search'), self::chrome($body, $site), '');
     }
     static function notFound(): string {
         $site = Store::json('site', []);

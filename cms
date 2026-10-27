@@ -50,9 +50,15 @@ try {
             $n->execute([gmdate('Y-m-d H:i:s'), $user]); out($n->rowCount() . ' session(s) revoked.'); break;
         case 'db:seed':
             $db = db();
-            if (Db::all($db, 'SELECT ID FROM products LIMIT 1')) { out('products table is not empty, skipped.'); break; }
-            $db->prepare('INSERT INTO products (reference, title, size, price, description) VALUES (?,?,?,?,?)')->execute(['K0507-01', 'PRECICE® ADK Assay Kit', '1 plate, 96 assays', 530, 'Non-radioactive, HTS-ready assay kit to measure human adenosine kinase (ADK) activity.']);
-            out('Seeded 1 product.'); break;
+            if (!Db::all($db, 'SELECT ID FROM products LIMIT 1')) {
+                $db->prepare('INSERT INTO products (reference, title, size, price, description) VALUES (?,?,?,?,?)')->execute(['K0507-01', 'PRECICE® ADK Assay Kit', '1 plate, 96 assays', 530, 'Non-radioactive, HTS-ready assay kit to measure human adenosine kinase (ADK) activity.']);
+                out('Seeded 1 product.');
+            }
+            if (!Db::all($db, 'SELECT id FROM search_items LIMIT 1')) {
+                $db->prepare('INSERT INTO search_items (title, content, keywords, url) VALUES (?,?,?,?)')->execute(['PRECICE® ADK Assay Kit', 'Non-radioactive, HTS-ready assay kit to measure human adenosine kinase (ADK) activity and screen ADK inhibitors. 96-well plate format.', 'ADK assay kit, adenosine kinase, inhibitor screening, HTS', '/convenient-assay-kits/adk-assay-kit']);
+                out('Seeded 1 search item.');
+            }
+            break;
         case 'compile':
             foreach (Renderer::compileAll() as $f) out("Wrote $f"); break;
         case 'serve':

@@ -13,4 +13,4 @@ function cfg(string $k, $d = null) { return $GLOBALS['CFG'][$k] ?? $d; }
 function e($s): string { return htmlspecialchars((string)$s, ENT_QUOTES); }
 function url(string $p = ''): string { return rtrim(cfg('base_path', ''), '/') . '/' . ltrim($p, '/'); }
 function slugify(string $s): string { $t = @iconv('UTF-8', 'ASCII//TRANSLIT', $s) ?: $s; return trim(preg_replace('/[^a-z0-9]+/', '-', strtolower($t)), '-'); }
-foreach (['Core', 'Auth', 'Router', 'Migrator', 'Http', 'AdminApi'] as $c) require ROOT . "/app/$c.php";
+foreach (['Core', 'Auth', 'Router', 'Migrator', 'Http', 'Mailer', 'Form', 'AdminApi'] as $c) require ROOT . "/app/$c.php";

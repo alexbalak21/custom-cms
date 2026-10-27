@@ -20,6 +20,12 @@ $router->get('/sitemap.xml', function () {
     foreach (Store::json('categories', []) as $c) echo '<url><loc>' . e("$base/{$c['slug']}") . '</loc></url>';
     echo '</urlset>';
 });
+$router->post('/forms/{id}', function ($p) {
+    $r = Form::submit($p['id'], $_POST, Auth::client());
+    if (($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'fetch') json_out($r, $r['ok'] ? 200 : 422);
+    $back = parse_url($_SERVER['HTTP_REFERER'] ?? '', PHP_URL_PATH) ?: url();           // path only: no open redirect
+    redirect($back . '?' . ($r['ok'] ? 'sent=1' : 'err=' . urlencode($r['message'])) . '#form-' . $p['id']);
+});
 $router->get('/search', function () {
     $q = trim((string)($_GET['q'] ?? ''));
     echo Renderer::search($q, mb_strlen($q) >= 2 ? (Rpc::call('search.query', ['q' => $q, 'limit' => 20]) ?? []) : []);

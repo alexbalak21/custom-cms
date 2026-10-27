@@ -59,11 +59,15 @@ try {
                 out('Seeded 1 search item.');
             }
             break;
+        case 'key:generate':
+            $k = bin2hex(random_bytes(32)); $f = ROOT . '/.env'; $e = is_file($f) ? file_get_contents($f) : '';
+            $e = preg_match('/^APP_KEY=.*$/m', $e) ? preg_replace('/^APP_KEY=.*$/m', "APP_KEY=$k", $e) : rtrim($e) . "\nAPP_KEY=$k\n";
+            file_put_contents($f, $e); out('APP_KEY set in .env'); break;
         case 'compile':
             foreach (Renderer::compileAll() as $f) out("Wrote $f"); break;
         case 'serve':
             $h = $o['host'] ?? 'localhost:8000'; passthru('php -S ' . escapeshellarg($h) . ' -t ' . escapeshellarg(ROOT . '/public') . ' ' . escapeshellarg(ROOT . '/public/index.php')); break;
         default:
-            out("Custom CMS console\n\n  migrate                  Run pending migrations\n  migrate:rollback         Roll back the last batch\n  migrate:status           Show migration status\n  make:migration <name>    Create a migration file\n  make:user                Create an admin user (prompts, or --name= --username= --email= --password=)\n  user:list                List users and last login device\n  user:password <user>     Change a user's password (revokes sessions)\n  user:logout <user>       Revoke all sessions of a user\n  db:seed                  Insert a sample product\n  compile                  Export published pages to dist/\n  serve [--host=h:p]       Start the PHP dev server");
+            out("Custom CMS console\n\n  migrate                  Run pending migrations\n  migrate:rollback         Roll back the last batch\n  migrate:status           Show migration status\n  make:migration <name>    Create a migration file\n  make:user                Create an admin user (prompts, or --name= --username= --email= --password=)\n  user:list                List users and last login device\n  user:password <user>     Change a user's password (revokes sessions)\n  user:logout <user>       Revoke all sessions of a user\n  db:seed                  Insert a sample product\n  key:generate             Set APP_KEY in .env\n  compile                  Export published pages to dist/\n  serve [--host=h:p]       Start the PHP dev server");
     }
 } catch (Throwable $e) { fail($e->getMessage()); }

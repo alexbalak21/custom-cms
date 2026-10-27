@@ -62,6 +62,8 @@ function renderFields(fields, obj, box, ch) {
     } else if (t === 'link') {
       obj[n] = obj[n] || {};
       ['label', 'url'].forEach(k => { const i = input('text', obj[n][k], v => { obj[n][k] = v; ch(); }, k); i.classList.add('mb-1'); w.append(i); });
+    } else if (t === 'form') {
+      w.append(select(window.FORM_IDS || [['contact', 'contact']], obj[n] || 'contact', v => { obj[n] = v; ch(); }));
     } else if (t === 'textarea' || t === 'richtext') {
       const x = el('textarea', 'form-control form-control-sm'); x.rows = t === 'richtext' ? 5 : 3; x.value = obj[n] ?? ''; x.oninput = () => { obj[n] = x.value; ch(); }; w.append(x);
     } else if (t === 'select') w.append(select(f.options || [], obj[n], v => { obj[n] = v; ch(); }));
@@ -97,7 +99,8 @@ async function pagesList() {
 
 /* ───────── Page editor (vertical split) ───────── */
 async function pageEditor(id) {
-  const [blocks, cats, pages] = await Promise.all([call('blocks'), call('categories'), call('pages')]);
+  const [blocks, cats, pages, forms] = await Promise.all([call('blocks'), call('categories'), call('pages'), call('forms')]);
+  window.FORM_IDS = forms.map(f => [f.id, f.title]);
   const def = i => blocks.find(b => b.id === i);
   let P = pages.find(p => p.id === id) || { id: 'p' + Date.now().toString(36), title: '', slug: '', category: '', status: 'draft', nav: false, vars: {}, seo: {}, blocks: [], _new: true };
   if (Array.isArray(P.vars)) P.vars = {};
@@ -261,9 +264,71 @@ async function settingsView() {
   app.append(box);
 }
 
+/* ───────── Forms (configurable fields, recipient, messages) ───────── */
+async function formsView(id) {
+  let list = await call('forms'), F = list.find(f => f.id === id) || list[0];
+  const blank = n => ({ id: n, title: n, to: 'contact@example.com', subject: 'New message from {{name}}', success_message: 'Thank you! Your message has been sent.', submit_label: 'Send message', enabled: true,
+    fields: [{ name: 'name', label: 'Name', type: 'text', required: true }, { name: 'email', label: 'Email', type: 'email', required: true }, { name: 'message', label: 'Message', type: 'textarea', required: true }] });
+  if (!F) { F = blank('contact'); list.push(F); }
+  const pick = select(list.map(f => [f.id, f.title]), F.id, v => { F = list.find(f => f.id === v); history.replaceState(null, '', BASE + '/admin/forms/' + v); draw(); }, 'w-auto');
+  const refresh = () => { pick.innerHTML = ''; list.forEach(f => pick.add(new Option(f.title, f.id, false, f.id === F.id))); };
+  tools.append(pick,
+    btn('New', () => { const n = slug(prompt('Form id') || ''); if (!n) return; F = blank(n); list.push(F); refresh(); draw(); }),
+    btn('Save', async () => { await call('save_form', F); list = await call('forms'); F = list.find(f => f.id === F.id); refresh(); draw(); flash('Saved'); }, 'btn-success'),
+    btn('Send test email', async () => { const r = await call('mail_test', { id: F.id }); flash(`Test sent to ${r.to} (driver: ${r.driver})`); }, 'btn-outline-info'),
+    btn('Delete', async () => { if (confirm('Delete this form?')) { await call('delete_form', { id: F.id }); location.href = BASE + '/admin/forms'; } }, 'btn-outline-danger'));
+  const side = el('div', 'side'), pv = el('div', 'pv'), frame = el('iframe'); pv.append(frame); app.append(side, pv);
+  const upd = debounce(() => preview(frame, { form: F }));
+  function draw() {
+    side.innerHTML = '';
+    const chk = (label, val, on) => { const d = el('div', 'form-check mb-2', `<input class="form-check-input" type="checkbox"><label class="form-check-label small">${label}</label>`); $('input', d).checked = !!val; $('input', d).onchange = e => { on(e.target.checked); upd(); }; return d; };
+    side.append(field('Title', input('text', F.title, v => F.title = v)),
+      field('Send to (comma separated)', input('text', F.to, v => F.to = v, 'contact@example.com')),
+      field('Email subject — use <code>{{fieldname}}</code>', input('text', F.subject, v => F.subject = v)),
+      field('Success message', input('text', F.success_message, v => { F.success_message = v; upd(); })),
+      field('Button label', input('text', F.submit_label, v => { F.submit_label = v; upd(); })),
+      chk('Form enabled', F.enabled, v => F.enabled = v), el('hr'), el('h6', '', 'Fields'));
+    F.fields.forEach((x, i) => {
+      const c = el('div', 'border rounded p-2 mb-2'), r1 = el('div', 'd-flex gap-1 mb-1'), r2 = el('div', 'd-flex gap-1 align-items-center mb-1');
+      const ni = input('text', x.name, () => {}, 'field_name'); ni.oninput = null; ni.onchange = () => { x.name = slug(ni.value).replace(/-/g, '_'); ni.value = x.name; upd(); };
+      r1.append(input('text', x.label, v => { x.label = v; upd(); }, 'Label'), ni);
+      const req = el('label', 'small text-nowrap', '<input type="checkbox"> required'); $('input', req).checked = !!x.required; $('input', req).onchange = e => { x.required = e.target.checked; upd(); };
+      const mv = k => () => { const j = i + k; if (j < 0 || j >= F.fields.length) return; [F.fields[i], F.fields[j]] = [F.fields[j], F.fields[i]]; draw(); upd(); };
+      r2.append(select(['text', 'email', 'tel', 'textarea', 'select', 'checkbox'], x.type, v => { x.type = v; draw(); upd(); }), req, btn('↑', mv(-1)), btn('↓', mv(1)), btn('✕', () => { F.fields.splice(i, 1); draw(); upd(); }, 'btn-outline-danger'));
+      c.append(r1, r2);
+      if (x.type === 'select') { const t = el('textarea', 'form-control form-control-sm'); t.rows = 4; t.placeholder = 'One option per line'; t.value = (x.options || []).join('\n'); t.oninput = () => { x.options = t.value.split('\n').map(s => s.trim()).filter(Boolean); upd(); }; c.append(t); }
+      else if (x.type !== 'checkbox') c.append(input('text', x.placeholder, v => { x.placeholder = v; upd(); }, 'Placeholder'));
+      side.append(c);
+    });
+    side.append(btn('+ Add field', () => { F.fields.push({ name: 'field_' + (F.fields.length + 1), label: 'New field', type: 'text', required: false }); draw(); upd(); }, 'btn-primary'));
+    upd();
+  }
+  draw();
+}
+
+async function messagesView() {
+  let items = await call('messages'); const box = el('div', 'scroll');
+  const draw = () => {
+    box.innerHTML = '';
+    if (!items.length) return box.append(el('p', 'text-muted', 'No messages yet.'));
+    const t = el('table', 'table align-middle', '<thead><tr><th>Date (UTC)</th><th>Form</th><th>From</th><th>Mail</th><th></th></tr></thead>'), tb = el('tbody'); t.append(tb);
+    items.forEach(m => {
+      const get = n => (m.fields.find(f => f.name === n) || {}).value || '';
+      const tr = el('tr', m.read_at ? '' : 'fw-bold', `<td>${esc(m.created_at)}</td><td>${esc(m.form_id)}</td><td>${esc(get('name'))} ${m.email ? '&lt;' + esc(m.email) + '&gt;' : ''}</td><td><span class="badge text-bg-${m.mail_status === 'failed' ? 'danger' : m.mail_status === 'sent' ? 'success' : 'secondary'}" title="${esc(m.mail_error || '')}">${esc(m.mail_status)}</span></td><td class="text-end"></td>`);
+      const dt = el('tr', '', `<td colspan="5" class="bg-body-tertiary">${m.fields.map(f => `<div class="mb-2"><div class="small text-muted">${esc(f.label)}</div><div style="white-space:pre-wrap">${esc(f.value)}</div></div>`).join('')}<div class="small text-muted">IP ${esc(m.ip)} · ${esc(m.user_agent)}${m.mail_error ? '<br>Mail error: ' + esc(m.mail_error) : ''}</div></td>`);
+      dt.hidden = true;
+      $('td:last-child', tr).append(btn('Open', async () => { dt.hidden = !dt.hidden; if (!dt.hidden && !m.read_at) { await call('message_read', { id: m.id }); m.read_at = 'now'; tr.classList.remove('fw-bold'); } }),
+        document.createTextNode(' '), btn('Delete', async () => { if (confirm('Delete this message?')) { await call('message_delete', { id: m.id }); items = items.filter(x => x.id !== m.id); draw(); } }, 'btn-outline-danger'));
+      tb.append(tr, dt);
+    });
+    box.append(t);
+  };
+  draw(); app.append(box);
+}
+
 /* ───────── Boot (the server-side router decides which view; PAGE comes from the PHP layout) ───────── */
 (async () => {
   const id = PAGE.id;
-  const views = { dashboard, pages: pagesList, page: () => pageEditor(id), blocks: () => blockBuilder(id), media: mediaView, categories: categoriesView, settings: settingsView };
+  const views = { dashboard, pages: pagesList, page: () => pageEditor(id), blocks: () => blockBuilder(id), media: mediaView, forms: () => formsView(id), messages: messagesView, categories: categoriesView, settings: settingsView };
   try { await (views[PAGE.view] || dashboard)(); } catch (e) { if (!e.error) console.error(e); }
 })();

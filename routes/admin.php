@@ -25,6 +25,10 @@ $router->get('/admin/media',              $screen('media'),      [$auth]);
 $router->get('/admin/categories',         $screen('categories'), [$auth]);
 $router->get('/admin/settings',           $screen('settings'),   [$auth]);
 
+$router->get('/admin/forms',            $screen('forms'),      [$auth]);
+$router->get('/admin/forms/{id}',       $screen('forms'),      [$auth]);
+$router->get('/admin/messages',         $screen('messages'),   [$auth]);
+
 // JSON API used by the admin screens
 $router->get('/admin/api/{action}',  fn($p) => admin_api($p['action']), [$apiAuth]);
 $router->post('/admin/api/{action}', fn($p) => admin_api($p['action']), [$apiAuth, $csrf]);

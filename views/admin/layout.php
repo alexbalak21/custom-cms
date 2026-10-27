@@ -21,7 +21,7 @@ textarea.bad{border-color:#dc3545!important}
   <span class="navbar-brand mb-0 h1">Custom CMS</span>
   <ul class="nav nav-pills">
     <?php $active = $view === 'page' ? 'pages' : $view;
-    foreach (['dashboard' => ['Dashboard', 'admin'], 'pages' => ['Pages', 'admin/pages'], 'blocks' => ['Blocks', 'admin/blocks'], 'media' => ['Media', 'admin/media'], 'categories' => ['Categories', 'admin/categories'], 'settings' => ['Settings', 'admin/settings']] as $k => [$l, $u]): ?>
+    foreach (['dashboard' => ['Dashboard', 'admin'], 'pages' => ['Pages', 'admin/pages'], 'blocks' => ['Blocks', 'admin/blocks'], 'media' => ['Media', 'admin/media'], 'forms' => ['Forms', 'admin/forms'], 'messages' => ['Messages', 'admin/messages'], 'categories' => ['Categories', 'admin/categories'], 'settings' => ['Settings', 'admin/settings']] as $k => [$l, $u]): ?>
     <li class="nav-item"><a class="nav-link <?= $active === $k ? 'active' : '' ?>" href="<?= e(url($u)) ?>"><?= $l ?></a></li><?php endforeach ?>
   </ul>
   <div id="tools" class="d-flex gap-2 align-items-center ms-auto flex-wrap"></div>

@@ -206,7 +206,7 @@ class Renderer {
         foreach (Store::json('categories', []) as $c) $links .= '<li class="nav-item"><a class="nav-link" href="' . url($c['slug']) . '">' . e($c['title']) . '</a></li>';
         foreach (Store::all('pages') as $p) if (!empty($p['nav']) && ($p['status'] ?? '') === 'published' && ($p['category'] ?? '') === '' && ($p['slug'] ?? '') !== '')
             $links .= '<li class="nav-item"><a class="nav-link" href="' . Pages::url($p) . '">' . e($p['title']) . '</a></li>';
-        return '<nav class="navbar navbar-expand bg-body-tertiary"><div class="container"><a class="navbar-brand" href="' . url() . '">' . e($site['name'] ?? '') . "</a><ul class=\"navbar-nav me-auto\">$links</ul><form class=\"d-flex\" action=\"" . url(\'search\') . "\"><input class=\"form-control form-control-sm\" type=\"search\" name=\"q\" placeholder=\"Search\" aria-label=\"Search\"></form></div></nav>\n<main>$main</main>\n<footer class=\"py-4 text-center text-muted small\">© " . date('Y') . ' ' . e($site['name'] ?? '') . "</footer>\n";
+        return '<nav class="navbar navbar-expand bg-body-tertiary"><div class="container"><a class="navbar-brand" href="' . url() . '">' . e($site['name'] ?? '') . "</a><ul class=\"navbar-nav me-auto\">$links</ul><form class=\"d-flex\" action=\"" . url('search') . "\"><input class=\"form-control form-control-sm\" type=\"search\" name=\"q\" placeholder=\"Search\" aria-label=\"Search\"></form></div></nav>\n<main>$main</main>\n<footer class=\"py-4 text-center text-muted small\">© " . date('Y') . ' ' . e($site['name'] ?? '') . "</footer>\n";
     }
     static function page(array $p): string {
         $site = Store::json('site', []); $body = ''; $css = []; $ctx = ['page' => $p];

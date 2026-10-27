@@ -213,7 +213,7 @@ async function blockBuilder(id) {
   const split = el('div', 'split'), pv = el('div', 'pane preview'), ed = el('div', 'pane editor d-flex flex-column'), frame = el('iframe'); pv.append(frame);
   const upd = debounce(() => preview(frame, { block: B })), tabs = el('ul', 'nav nav-tabs mb-2'), areas = {}, wrap = el('div', 'flex-fill'); wrap.style.minHeight = 0;
   const lab = input('text', '', v => B.label = v, 'Label'), cat = input('text', '', v => B.category = v, 'Category'), meta = el('div', 'd-flex gap-2 mb-2'); const kind = select([['', 'Normal block'], ['stack', 'Container: stack (use {{{children}}})'], ['row', 'Container: row of columns (use {{{children}}})']], '', v => { if (v) { B.container = true; B.layout = v; } else { delete B.container; delete B.layout; } upd(); }); meta.append(lab, cat, kind);
-  [['template', 'HTML template (Bootstrap)'], ['css', 'Custom CSS'], ['fields', 'Fields (JSON)'], ['sample', 'Sample content (JSON)'], ['rpc', 'Data / RPC (JSON)']].forEach(([k, label], i) => {
+  [['template', 'HTML template (Bootstrap)'], ['css', 'Custom CSS'], ['fields', 'Fields (JSON)'], ['sample', 'Sample content (JSON)'], ['rpc', 'Data / RPC (JSON)'], ['js', 'Custom JS']].forEach(([k, label], i) => {
     const li = el('li', 'nav-item', `<a class="nav-link ${i ? '' : 'active'}" href="#">${label}</a>`), ta = el('textarea', 'form-control'); ta.style.display = i ? 'none' : ''; areas[k] = ta; wrap.append(ta);
     if (k === 'rpc') ta.placeholder = `{ "call": "${me.procedures[0]}", "params": { "category": "@content.category" }, "as": "products" }\n\nAvailable: ${me.procedures.join(', ')}\nParams: @content.x (block field) · @page.vars.x (page variable)`;
     li.onclick = e => { e.preventDefault(); tabs.querySelectorAll('a').forEach(a => a.classList.remove('active')); li.firstChild.classList.add('active'); Object.values(areas).forEach(x => x.style.display = 'none'); ta.style.display = ''; };
@@ -226,7 +226,7 @@ async function blockBuilder(id) {
   ed.append(meta, tabs, wrap); split.append(pv, ed); app.append(split);
   function load() {
     kind.value = B.container ? (B.layout || 'stack') : ''; lab.value = B.label || ''; cat.value = B.category || ''; areas.template.value = B.template || ''; areas.css.value = B.css || '';
-    areas.fields.value = JSON.stringify(B.fields || [], null, 2); areas.sample.value = JSON.stringify(B.sample || {}, null, 2); areas.rpc.value = B.rpc ? JSON.stringify(B.rpc, null, 2) : '';
+    areas.fields.value = JSON.stringify(B.fields || [], null, 2); areas.sample.value = JSON.stringify(B.sample || {}, null, 2); areas.rpc.value = B.rpc ? JSON.stringify(B.rpc, null, 2) : ''; areas.js.value = B.js || '';
     refresh(); pick.value = B.id; upd();
   }
   load();
@@ -276,10 +276,24 @@ async function categoriesView() {
   app.append(box);
 }
 async function settingsView() {
-  const s = await call('site'), box = el('div', 'scroll'); box.style.maxWidth = '520px';
-  box.append(el('h5', '', 'Site'), field('Site name', input('text', s.name, v => s.name = v)), field('Base URL (canonical, sitemap, og:image)', input('text', s.base_url, v => s.base_url = v)),
+  const [s, blocks] = await Promise.all([call('site'), call('blocks')]), box = el('div', 'scroll'); box.style.maxWidth = '640px';
+  const def = id => blocks.find(b => b.id === id), OPT = { theme: ['default', 'light', 'dark', 'primary', 'secondary'], spacing: ['none', 'small', 'medium', 'large', 'xl'], container: ['narrow', 'boxed', 'wide', 'full'] };
+  box.append(el('h5', '', 'Site'), field('Site name', input('text', s.name, v => s.name = v)), field('Base URL (canonical, sitemap, og:image)', input('text', s.base_url, v => s.base_url = v)));
+  // Header / footer can be any block (e.g. the Navbar block); it is shown on every public page
+  const area = (key, label, ds) => {
+    const w = el('div', 'mb-3'), body = el('div');
+    const draw = () => {
+      body.innerHTML = ''; const inst = s[key]; if (!inst || !def(inst.block)) return;
+      const row = el('div', 'd-flex gap-1 my-2'); inst.settings = inst.settings || {}; inst.content = inst.content || {};
+      Object.entries(OPT).forEach(([k, o]) => row.append(select(o, inst.settings[k] || ds[k], v => inst.settings[k] = v)));
+      body.append(row); renderFields(def(inst.block).fields || [], inst.content, body, () => {});
+    };
+    w.append(el('h6', '', label), select([['', 'Default (Bootstrap)'], ...blocks.map(b => [b.id, b.label])], s[key]?.block || '', v => { s[key] = v ? { block: v, content: JSON.parse(JSON.stringify(def(v).sample || {})), settings: { ...ds } } : null; draw(); }), body);
+    draw(); return w;
+  };
+  box.append(el('hr'), area('header', 'Site header block', { theme: 'default', spacing: 'none', container: 'full' }), area('footer', 'Site footer block', { theme: 'dark', spacing: 'medium', container: 'boxed' }),
     btn('Save site', async () => { await call('save_site', s); flash('Saved'); }, 'btn-success'), el('hr'), el('h5', '', 'Change password'));
-  let pw = ''; box.append(field('New password (min 8)', input('password', '', v => pw = v)), btn('Change password', async () => { await call('password', { password: pw }); flash('Password changed'); }, 'btn-primary'));
+  let pw = ''; box.append(field('New password (min 10)', input('password', '', v => pw = v)), btn('Change password', async () => { await call('password', { password: pw }); flash('Password changed'); }, 'btn-primary'));
   app.append(box);
 }
 
